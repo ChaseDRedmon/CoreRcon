@@ -1,7 +1,10 @@
 using System;
+using System.Buffers.Text;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using CoreRCON.PacketFormats;
@@ -160,15 +163,14 @@ namespace CoreRCON
                 case ServerType.Minecraft:
                     var handshake = BuildHandshake();
                     await _client.SendAsync(handshake, handshake.Length, host);
-
+                    
                     var aBuffer = (await _client.ReceiveAsync()).Buffer;
                     var result = BuildMinecraftChallengeResponse(aBuffer);
-
                     return result;
 
                     static byte[] BuildHandshake()
                     {
-                        return new byte[7]
+                        return new[]
                         {
                             _magic[0],
                             _magic[1],
@@ -187,15 +189,11 @@ namespace CoreRCON
         private static byte[] BuildMinecraftChallengeResponse(Span<byte> buffer)
         {
             ReadOnlySpan<byte> challenge = buffer.Slice(5, buffer.Length);
-            Span<char> challengeChars = Span<char>.Empty;
-
-            Encoding.ASCII.GetChars(challenge, challengeChars);
-            var challengeInt = int.Parse(challengeChars);
-
-            var challengeBytes = BitConverter.GetBytes(challengeInt).AsSpan();
-            challengeBytes.Reverse();
-
-            return challengeBytes.ToArray();
+            _ = Utf8Parser.TryParse(challenge, out int challengeInt, out _);
+            var reversedChallengeInt = BitConverter.GetBytes(challengeInt).AsSpan();
+            reversedChallengeInt.Reverse();
+            
+            return reversedChallengeInt.ToArray();
         }
     }
 }
