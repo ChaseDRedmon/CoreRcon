@@ -3,20 +3,22 @@ using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO.Pipelines;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using CoreRCON.PacketFormats;
 using CoreRCON.Parsers;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CoreRCON
 {
-    public partial class RCON : IDisposable
+    public class RCON : IDisposable
     {
         internal static string Identifier = "";
+        
+        private readonly ILogger<RCON> _logger;
 
         // Allows us to keep track of when authentication succeeds, so we can block Connect from returning until it does.
         private TaskCompletionSource<bool> _authenticationTask;
@@ -33,8 +35,8 @@ namespace CoreRCON
         private bool _multiPacket;
 
         // Map of pending command references.  These are called when a command with the matching Id (key) is received.  Commands are called only once.
-        private ConcurrentDictionary<int, TaskCompletionSource<string>> _pendingCommands { get; } = new ConcurrentDictionary<int, TaskCompletionSource<string>>();
-        private Dictionary<int, string> _incomingBuffer { get; } = new Dictionary<int, string>();
+        private ConcurrentDictionary<int, TaskCompletionSource<string>> _pendingCommands { get; } = new();
+        private Dictionary<int, string?> _incomingBuffer { get; } = new();
 
         private Socket _tcp { get; set; }
         private Task _networkConsumerTask;
@@ -48,7 +50,13 @@ namespace CoreRCON
         /// Fired when an RCON package has been received
         /// </summary>
         public event Action<RCONPacket> OnPacketReceived;
-
+        
+        public RCON(IPAddress host, ushort port, string password, uint tcpTimeout = 10000, bool sourceMultiPacketSupport = false, ILogger<RCON>? logger = null)
+            : this(new IPEndPoint(host, port), password, tcpTimeout, sourceMultiPacketSupport)
+        {
+            _logger = logger ?? NullLogger<RCON>.Instance;
+        }
+        
         /// <summary>
         /// Create RCON object, Se main constructor for more info
         /// </summary>
@@ -83,11 +91,14 @@ namespace CoreRCON
             {
                 return;
             }
+            
             _tcp = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
             _tcp.ReceiveTimeout = _timeout;
             _tcp.SendTimeout = _timeout;
             _tcp.NoDelay = true;
+            
             await _tcp.ConnectAsync(_endpoint);
+            
             _connected = true;
             Pipe pipe = new Pipe();
             Task writing = FillPipeAsync(pipe.Writer);
@@ -95,16 +106,20 @@ namespace CoreRCON
 
             // Wait for successful authentication
             _authenticationTask = new TaskCompletionSource<bool>();
-            await SendPacketAsync(new RCONPacket(0, PacketType.Auth, _password));
+            await SendPacketAsync(new RCONPacket { Id = 0, Type = PacketType.Auth, Body = _password });
+            
             _networkConsumerTask = Task.WhenAll(writing, reading)
                 .ContinueWith(t =>
                 {
                     var aggException = t.Exception.Flatten();
-                    Console.Error.WriteLine("RCON connection closed");
+                    _logger.LogError("RCON connection closed");
                     foreach (var exception in aggException.InnerExceptions)
-                        Console.Error.WriteLine($"Exception {exception.Message}");
+                    {
+                        _logger.LogError("Exception {exceptionMessage}", exception.Message);
+                    }
                 },
                 TaskContinuationOptions.OnlyOnFaulted);
+            
             await _authenticationTask.Task;
         }
 
@@ -157,7 +172,9 @@ namespace CoreRCON
         /// <returns>Consumer Task</returns>
         async Task ReadPipeAsync(PipeReader reader)
         {
-            byte[] byteArr = new byte[Constants.MAX_PACKET_SIZE];
+            // byte[] byteArr = new byte[Constants.MAX_PACKET_SIZE];
+
+            var byteArr = ArrayPool<byte>.Shared.Rent(Constants.MAX_PACKET_SIZE);
             while (true)
             {
                 ReadResult result = await reader.ReadAsync();
@@ -170,11 +187,13 @@ namespace CoreRCON
                     {
                         break;
                     }
+                    
                     reader.AdvanceTo(packetStart, buffer.End);
                     continue;
                     // Complete header not yet received
                 }
-                int size = BitConverter.ToInt32(buffer.Slice(packetStart, 4).ToArray(), 0);
+                
+                var size = BitConverter.ToInt32(buffer.Slice(packetStart, 4).FirstSpan);
                 if (buffer.Length >= size + 4)
                 {
                     // Get packet end positions 
@@ -187,17 +206,15 @@ namespace CoreRCON
                         // Failed auth responses return with an ID of -1
                         if (packet.Id == -1)
                         {
-                            _authenticationTask.SetException(
-                                new AuthenticationException($"Authentication failed for {_tcp.RemoteEndPoint}.")
-                                );
+                            _authenticationTask.SetException(new AuthenticationException($"Authentication failed for {_tcp.RemoteEndPoint}."));
                         }
+                        
                         // Tell Connect that authentication succeeded
                         _authenticationTask.SetResult(true);
                     }
 
                     // Forward rcon packet to handler
                     RCONPacketReceived(packet);
-
                     reader.AdvanceTo(packetEnd);
                 }
                 else
@@ -206,18 +223,17 @@ namespace CoreRCON
                 }
 
                 // Tell the PipeReader how much of the buffer we have consumed
-
                 // Stop reading if there's no more data coming
                 if (buffer.IsEmpty && result.IsCompleted)
                 {
                     break; // exit loop
                 }
             }
+            
+            ArrayPool<byte>.Shared.Return(byteArr, true);
 
             // If authentication did not complete
-            _authenticationTask.TrySetException(
-                                new AuthenticationException($"Server did not respond to auth {_tcp.RemoteEndPoint}.")
-                                );
+            _authenticationTask.TrySetException(new AuthenticationException($"Server did not respond to auth {_tcp.RemoteEndPoint}."));
 
             // Mark the PipeReader as complete
             await reader.CompleteAsync();
@@ -250,12 +266,11 @@ namespace CoreRCON
                 Parse = line => instance.Parse(line),
             };
 
-
-            object parsed;
-            if (!container.TryParse(response, out parsed))
+            if (!container.TryParse(response, out var parsed))
             {
                 throw new FormatException("Failed to parse server response");
             }
+            
             return (T)parsed;
         }
 
@@ -266,7 +281,6 @@ namespace CoreRCON
         /// <exception cref = "System.AggregateException" >Connection exceptions</ exception >
         public async Task<string> SendCommandAsync(string command)
         {
-
             // This TaskCompletion source could be initialized with TaskCreationOptions.RunContinuationsAsynchronously
             // However we this library is designed to be able to run without its own thread
             // Read more about this option here:
@@ -277,7 +291,8 @@ namespace CoreRCON
             {
                 throw new SocketException();
             }
-            RCONPacket packet = new RCONPacket(packetId, PacketType.ExecCommand, command);
+
+            var packet = new RCONPacket { Id = packetId, Type = PacketType.ExecCommand, Body = command };
 
             await SendPacketAsync(packet);
             await Task.WhenAny(source.Task, _networkConsumerTask);
@@ -288,12 +303,10 @@ namespace CoreRCON
 
             if (_networkConsumerTask.IsFaulted)
             {
-                throw _networkConsumerTask.Exception.InnerException;
+                throw _networkConsumerTask.Exception?.InnerException;
             }
-            else
-            {
-                throw new SocketException();
-            }
+
+            throw new SocketException();
         }
 
         /// <summary>
@@ -304,33 +317,34 @@ namespace CoreRCON
         private void RCONPacketReceived(RCONPacket packet)
         {
             // Call pending result and remove from map
-            if (_pendingCommands.TryGetValue(packet.Id, out TaskCompletionSource<string> taskSource))
-            {
-                if (_multiPacket)
-                {
-                    //Read any previous messages 
-                    string body;
-                    _incomingBuffer.TryGetValue(packet.Id, out body);
+            if (!_pendingCommands.TryGetValue(packet.Id, out TaskCompletionSource<string>? taskSource))
+                return;
 
-                    if (packet.Body == "")
-                    {
-                        //Avoid yielding
-                        taskSource.SetResult(body ?? string.Empty);
-                        _pendingCommands.TryRemove(packet.Id, out _);
-                        _incomingBuffer.Remove(packet.Id);
-                    }
-                    else
-                    {
-                        //Append to previous messages
-                        _incomingBuffer[packet.Id] = body + packet.Body;
-                    }
+            var (packetBody, packetId, _) = packet;
+
+            if (_multiPacket)
+            {
+                //Read any previous messages 
+                _incomingBuffer.TryGetValue(packetId, out var body);
+
+                if (packetBody == string.Empty)
+                {
+                    //Avoid yielding
+                    taskSource.SetResult(body ?? string.Empty);
+                    _pendingCommands.TryRemove(packetId, out _);
+                    _incomingBuffer.Remove(packetId);
                 }
                 else
                 {
-                    //Avoid yielding
-                    taskSource.SetResult(packet.Body);
-                    _pendingCommands.TryRemove(packet.Id, out _);
+                    //Append to previous messages
+                    _incomingBuffer[packetId] = body + packetBody;
                 }
+            }
+            else
+            {
+                //Avoid yielding
+                taskSource.SetResult(packetBody);
+                _pendingCommands.TryRemove(packetId, out _);
             }
 
             OnPacketReceived?.Invoke(packet);
@@ -344,12 +358,13 @@ namespace CoreRCON
         {
             if (!_connected) throw new InvalidOperationException("Connection is closed.");
             await _tcp.SendAsync(new ArraySegment<byte>(packet.ToBytes()), SocketFlags.None);
+            
             if (packet.Type == PacketType.ExecCommand && _multiPacket)
             {
                 //Send a extra packet to find end of large packets
-                await _tcp.SendAsync(new ArraySegment<byte>(new RCONPacket(packet.Id, PacketType.Response, "").ToBytes()), SocketFlags.None);
+                var rconPacket = packet with { Type = PacketType.Response, Body = string.Empty };
+                await _tcp.SendAsync(new ArraySegment<byte>(rconPacket.ToBytes()), SocketFlags.None);
             }
-
         }
     }
 }

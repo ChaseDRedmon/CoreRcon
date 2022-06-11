@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using CoreRCON.Parsers.Csgo;
+﻿using CoreRCON.Parsers.Csgo;
 using CoreRCON.Parsers.Standard;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -24,7 +21,6 @@ namespace CoreRCON.Tests
             Assert.AreEqual(ctRounds, score.CTScore);
             Assert.AreEqual(tRounds, score.TScore);
         }
-
 
         [TestMethod]
         public void testDisconnectParser()

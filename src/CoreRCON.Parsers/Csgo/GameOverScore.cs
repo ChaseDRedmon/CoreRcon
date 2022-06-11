@@ -1,5 +1,4 @@
 ﻿using System.Text.RegularExpressions;
-using CoreRCON.Parsers.Standard;
 
 namespace CoreRCON.Parsers.Csgo
 {

@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 
 namespace CoreRCON.Parsers.Standard
 {
@@ -18,6 +15,7 @@ namespace CoreRCON.Parsers.Standard
         public byte MaxPlayers { get; set; }
         public string PublicHost { get; set; }
         public string SteamID { get; set; }
+        
         [Obsolete("No longer part of status message")]
         public string[] Tags { get; set; }
         public string Version { get; set; }
@@ -27,18 +25,10 @@ namespace CoreRCON.Parsers.Standard
 
     public class StatusParser : IParser<Status>
     {
+        public bool IsMatch(string input) => input.Contains("hostname: ") | input.Contains("hibernating");
         public string Pattern => throw new System.NotImplementedException();
-
-        public bool IsMatch(string input)
-        {
-            return input.Contains("hostname: ") | input.Contains("hibernating");
-
-        }
-
-        public Status Load(GroupCollection groups)
-        {
-            throw new System.NotImplementedException();
-        }
+        public Status Load(GroupCollection groups) => throw new System.NotImplementedException();
+        public Status Parse(Group group) => throw new System.NotImplementedException();
 
         public Status Parse(string input)
         {
@@ -48,10 +38,9 @@ namespace CoreRCON.Parsers.Standard
                     && !string.IsNullOrEmpty(x[1].Trim()))
                 .ToDictionary(x => x[0].Trim(), x => string.Join(":", x.ToList().Skip(1)).Trim());
 
-            string hostname = null;
-            groups.TryGetValue("hostname", out hostname);
-            string version = null;
-            groups.TryGetValue("version", out version);
+            groups.TryGetValue("hostname", out var hostname);
+            groups.TryGetValue("version", out var version);
+            
             string steamId = null;
             if (version != null)
             {
@@ -61,10 +50,9 @@ namespace CoreRCON.Parsers.Standard
                     steamId = match.Groups[1].Value;
                 }
             }
-            string map = null;
-            groups.TryGetValue("map", out map);
-            string type = null;
-            groups.TryGetValue("type", out type);
+
+            groups.TryGetValue("map", out var map);
+            groups.TryGetValue("type", out var type);
 
             byte players = 0, bots = 0, maxPlayers = 0;
             string playerString = null;
@@ -96,8 +84,10 @@ namespace CoreRCON.Parsers.Standard
                 hibernating = input.Contains("hibernating") && !input.Contains("not hibernating");
             }
 
-            string localIp = null, publicIp = null, ipString = null;
-            groups.TryGetValue("udp / ip", out ipString);
+            string localIp = null;
+            string publicIp = null;
+            
+            groups.TryGetValue("udp / ip", out var ipString);
             if (ipString != null)
             {
                 Match oldMatch = Regex.Match(ipString, "((\\d|\\.)+:(\\d|\\.)+)\\(public ip: (.*)\\).*"); //Old pattern
@@ -128,11 +118,6 @@ namespace CoreRCON.Parsers.Standard
                 LocalHost = localIp,
                 PublicHost = publicIp
             };
-        }
-
-        public Status Parse(Group group)
-        {
-            throw new System.NotImplementedException();
         }
     }
 }

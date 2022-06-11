@@ -20,9 +20,9 @@ namespace CoreRCON
             }
         }
 
-        private List<Action<LogAddressPacket>> _logListeners { get; } = new List<Action<LogAddressPacket>>();
-        private List<ParserContainer> _parseListeners { get; } = new List<ParserContainer>();
-        private List<Action<string>> _rawListeners { get; } = new List<Action<string>>();
+        private List<Action<LogAddressPacket>> _logListeners { get; } = new();
+        private List<ParserContainer> _parseListeners { get; } = new();
+        private List<Action<string>> _rawListeners { get; } = new();
         private UdpClient _udp { get; set; }
         private IPEndPoint[] _sources { get; set; }
 

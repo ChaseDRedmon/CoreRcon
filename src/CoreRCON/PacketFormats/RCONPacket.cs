@@ -3,67 +3,81 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 
-/// <summary>
-/// Encapsulate RCONPacket specification.
-///
-/// Detailed specification of RCON packets can be found here:
-/// https://developer.valvesoftware.com/wiki/Source_RCON_Protocol
-/// </summary>
+
 namespace CoreRCON.PacketFormats
 {
-    public class RCONPacket
+    /// <summary>
+    /// Encapsulate RCONPacket specification.
+    ///
+    /// Detailed specification of RCON packets can be found here:
+    /// https://developer.valvesoftware.com/wiki/Source_RCON_Protocol
+    /// </summary>
+    public record RCONPacket
     {
-        public string Body { get; private set; }
-        public int Id { get; private set; }
-        public PacketType Type { get; private set; }
-
         /// <summary>
-        /// Create a new packet.
+        /// The actual information held within.
         /// </summary>
-        /// <param name="id">Some kind of identifier to keep track of responses from the server.</param>
-        /// <param name="type">What the server is supposed to do with the body of this packet.</param>
-        /// <param name="body">The actual information held within.</param>
-        public RCONPacket(int id, PacketType type, string body)
-        {
-            Id = id;
-            Type = type;
-            Body = body;
-        }
+        public required string Body { get; init; }
+        
+        /// <summary>
+        /// Some kind of identifier to keep track of responses from the server.
+        /// </summary>
+        public required int Id { get; init; }
+        
+        /// <summary>
+        /// What the server is supposed to do with the body of this packet.
+        /// </summary>
+        public required PacketType Type { get; init; }
 
         public override string ToString() => Body;
-
+        
+        /// <summary>
+        /// Deconstructs the RCONPacket
+        /// </summary>
+        /// <param name="body"></param>
+        /// <param name="id"></param>
+        /// <param name="type"></param>
+        public void Deconstruct(out string body, out int id, out PacketType type) => (body, id, type) = (Body, Id, Type);
+        
         /// <summary>
         /// Converts a buffer to a packet.
         /// </summary>
         /// <param name="buffer">Buffer to read.</param>
+        /// <exception cref="NullReferenceException">If buffer is null</exception>
+        /// <exception cref="InvalidDataException">If buffer does not contain a sizeof field within the 4 four bytes</exception>
+        /// <exception cref="InvalidDataException">If the length of the buffer is longer than <see cref="Constants.MAX_PACKET_SIZE"/></exception>
+        /// <exception cref="InvalidDataException">If the packet size is larger than the buffer</exception>
+        /// <exception cref="InvalidDataException">If the size is less than 10, packet is invalid</exception>
         /// <returns>Created packet.</returns>
-        internal static RCONPacket FromBytes(byte[] buffer)
+        internal static RCONPacket FromBytes(ReadOnlySpan<byte> buffer)
         {
-            if (buffer == null) throw new NullReferenceException("Byte buffer cannot be null.");
             if (buffer.Length < 4) throw new InvalidDataException("Buffer does not contain a size field.");
             if (buffer.Length > Constants.MAX_PACKET_SIZE) throw new InvalidDataException("Buffer is too large for an RCON packet.");
 
-            int size = BitConverter.ToInt32(buffer, 0);
+            int size = BitConverter.ToInt32(buffer);
             if (size > buffer.Length - 4) throw new InvalidDataException("Packet size specified was larger then buffer");
-
             if (size < 10) throw new InvalidDataException("Packet received was invalid.");
 
-            int id = BitConverter.ToInt32(buffer, 4);
-            PacketType type = (PacketType)BitConverter.ToInt32(buffer, 8);
+            int id = BitConverter.ToInt32(buffer[4..]);
+            PacketType type = (PacketType)BitConverter.ToInt32(buffer[8..]);
 
             try
             {
                 // Some games support UTF8 payloads, ASCII will also work due to backwards compatiblity
-                char[] rawBody = Encoding.UTF8.GetChars(buffer, 12, size - 10);
+                var rawBody = Span<char>.Empty;
+                Encoding.UTF8.GetChars(buffer.Slice(12, size - 10), rawBody);
+                
+                //char[] rawBody = Encoding.UTF8.GetChars(buffer, 12, size - 10);
                 string body = new string(rawBody).TrimEnd();
+                
                 // Force Line endings to match environment
                 body = Regex.Replace(body, @"\r\n|\n\r|\n|\r", "\r\n");
-                return new RCONPacket(id, type, body);
+                return new RCONPacket { Body = body, Id = id, Type = type };
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"{DateTime.Now} - Error reading RCON packet body exception was: {ex.Message}");
-                return new RCONPacket(id, type, "");
+                return new RCONPacket { Id = id, Type = type, Body = string.Empty };
             }
         }
 

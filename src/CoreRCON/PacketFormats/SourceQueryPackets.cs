@@ -1,4 +1,6 @@
-﻿namespace CoreRCON.PacketFormats
+﻿using System;
+
+namespace CoreRCON.PacketFormats
 {
     public enum ServerEnvironment
     {
@@ -25,8 +27,8 @@
         Public = 0x0,
         Private = 0x1
     }
-
-    public class SourceQueryInfo : IQueryInfo
+    
+    public class SourceQueryInfo : ISourceQueryInfo
     {
         public byte Bots { get; private set; }
         public ServerEnvironment Environment { get; private set; }
@@ -42,7 +44,7 @@
         public ServerVAC VAC { get; private set; }
         public ServerVisibility Visibility { get; private set; }
 
-        public static SourceQueryInfo FromBytes(byte[] buffer)
+        public static SourceQueryInfo FromBytes(ReadOnlySpan<byte> buffer)
         {
             int i = 6;
             return new SourceQueryInfo
@@ -63,14 +65,14 @@
             };
         }
     }
-
+    
     public class ServerQueryPlayer
     {
         public float Duration { get; private set; }
         public string Name { get; private set; }
         public short Score { get; private set; }
 
-        public static ServerQueryPlayer[] FromBytes(byte[] buffer)
+        public static ServerQueryPlayer[] FromBytes(ReadOnlySpan<byte> buffer)
         {
             int i = 7;
 

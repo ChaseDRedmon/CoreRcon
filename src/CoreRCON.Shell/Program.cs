@@ -1,19 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using CoreRCON;
-using CoreRCON.PacketFormats;
 
 /*
  * Simple Interactive RCON shell
  * 
  */
 
-namespace RconShell
+namespace CoreRCON.Shell
 {
     class Program
     {
@@ -24,20 +20,23 @@ namespace RconShell
 
         public static async void ConcurrentTestAsync()
         {
-            Console.WriteLine($"Thread {Thread.CurrentThread.ManagedThreadId} started");
+            Console.WriteLine($"Thread {Environment.CurrentManagedThreadId} started");
             var context = SynchronizationContext.Current;
+            
             if (context != null)
                 Console.WriteLine($"Context {context.ToString()}");
+            
             for (int i = 0; i < MessageCount; i++)
             {
                 string response = await rcon.SendCommandAsync($"say {i}");
                 if (response.EndsWith($"Console: {i}"))
                 {
-                    Console.WriteLine($"Thread {Thread.CurrentThread.ManagedThreadId} failed on iteration {i} response = {response}");
+                    Console.WriteLine($"Thread {Environment.CurrentManagedThreadId} failed on iteration {i} response = {response}");
                 }
             }
+            
             Interlocked.Increment(ref completed);
-            Console.WriteLine($"Thread {Thread.CurrentThread.ManagedThreadId} finished");
+            Console.WriteLine($"Thread {Environment.CurrentManagedThreadId} finished");
         }
 
         static async Task Main(string[] args)
@@ -48,8 +47,10 @@ namespace RconShell
 
             Console.WriteLine("Enter ip");
             ip = Console.ReadLine();
+            
             Console.WriteLine("Enter port");
             port = int.Parse(Console.ReadLine());
+            
             Console.WriteLine("Enter password");
             password = Console.ReadLine();
 
@@ -60,6 +61,7 @@ namespace RconShell
 
             rcon = new RCON(endpoint, password, 0);
             await rcon.ConnectAsync();
+            
             bool connected = true;
             Console.WriteLine("Connected");
 
@@ -78,7 +80,7 @@ namespace RconShell
                     List<Thread> threadList = new List<Thread>(ThreadCount);
                     for (int i = 0; i < ThreadCount; i++)
                     {
-                        ThreadStart childref = new ThreadStart(ConcurrentTestAsync);
+                        ThreadStart childref = ConcurrentTestAsync;
                         Thread childThread = new Thread(childref);
                         childThread.Start();
                         threadList.Add(childThread);
@@ -89,7 +91,8 @@ namespace RconShell
                     }
                     continue;
                 }
-                String response = await rcon.SendCommandAsync(command);
+                
+                var response = await rcon.SendCommandAsync(command);
                 Console.WriteLine(response);
             }
         }

@@ -4,7 +4,6 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
-using CoreRCON;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 /*
@@ -24,8 +23,8 @@ namespace CoreRCON.Tests
     [TestClass]
     public class RconTest
     {
-
         RCON rconClient;
+        
         //Connection settings for server
         private readonly IPAddress _ip = IPAddress.Parse("127.0.0.1");
         private readonly ushort _port = 27015;
@@ -42,9 +41,7 @@ namespace CoreRCON.Tests
         {
             rconClient = new RCON(_ip, _port, _password, 1000, false);
             await rconClient.ConnectAsync();
-
         }
-
 
         [TestMethod]
         [ExpectedException(typeof(AuthenticationException))]
@@ -53,7 +50,7 @@ namespace CoreRCON.Tests
             //Warning ! This test can ban your ip in the server if sv_rcon_maxfailure is set to 0
             //Use removeip to unban your ip (Default ban period is 60 min)
             rconClient.Dispose();
-            rconClient = new RCON(_ip, _port, "wrong PW");
+            rconClient = new RCON(_ip, _port, "wrong PW", 10000U, false, null);
             await rconClient.ConnectAsync();
         }
 
@@ -71,7 +68,6 @@ namespace CoreRCON.Tests
             Assert.AreEqual("Console: hi", response);
         }
 
-
         [TestMethod]
         public async Task testLongResponseAsync()
         {
@@ -81,7 +77,6 @@ namespace CoreRCON.Tests
             string response = await rconClient.SendCommandAsync("cvarList");
             Assert.IsTrue(response.EndsWith("total convars/concommands"));
         }
-
 
         [TestMethod]
         public async Task testMultipleCommands()
@@ -109,8 +104,6 @@ namespace CoreRCON.Tests
             await Task.WhenAll(tasks);
             Console.Out.Flush();
         }
-
-
 
         [TestMethod, Timeout(30000)]
         [ExpectedException(typeof(SocketException))]

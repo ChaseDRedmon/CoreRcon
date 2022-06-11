@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -17,15 +16,6 @@ namespace CoreRCON
     public class ServerQuery
     {
         /// <summary>
-        /// The different query implementations.
-        /// </summary>
-        public enum ServerType
-        {
-            Source,
-            Minecraft
-        }
-
-        /// <summary>
         /// Minecraft packet types.
         /// </summary>
         private enum PacketType
@@ -35,10 +25,10 @@ namespace CoreRCON
         }
 
         private static UdpClient _client;
-        private static readonly byte[] _magic = new byte[] { 0xFE, 0xFD }; // Minecraft 'magic' bytes.
-        private static readonly byte[] _sessionid = new byte[] { 0x01, 0x02, 0x03, 0x04 };
-        private static readonly byte[] _asInfoPayload = new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0x54, 0x53, 0x6F, 0x75, 0x72, 0x63, 0x65, 0x20, 0x45, 0x6E, 0x67, 0x69, 0x6E, 0x65, 0x20, 0x51, 0x75, 0x65, 0x72, 0x79, 0x00 };
-        private static readonly byte[] _asInfochallengeResponse = new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0x41 };
+        private static readonly byte[] _magic = { 0xFE, 0xFD }; // Minecraft 'magic' bytes.
+        private static readonly byte[] _sessionid = { 0x01, 0x02, 0x03, 0x04 };
+        private static readonly byte[] _asInfoPayload = { 0xFF, 0xFF, 0xFF, 0xFF, 0x54, 0x53, 0x6F, 0x75, 0x72, 0x63, 0x65, 0x20, 0x45, 0x6E, 0x67, 0x69, 0x6E, 0x65, 0x20, 0x51, 0x75, 0x65, 0x72, 0x79, 0x00 };
+        private static readonly byte[] _asInfochallengeResponse = { 0xFF, 0xFF, 0xFF, 0xFF, 0x41 };
 
         static ServerQuery()
         {
@@ -47,8 +37,11 @@ namespace CoreRCON
 
         /// <inheritdoc cref="Info(IPEndPoint, ServerType, TimeSpan?)"/>
         /// <param name="address">IP of the server.</param>
-        public static async Task<IQueryInfo> Info(IPAddress address, ushort port, ServerType type, TimeSpan? timeout = null)
-            => await Info(new IPEndPoint(address, port), type, timeout);
+        /// <param name="port">Port of the server</param>
+        /// <param name="type">Game Server Type</param>
+        /// <param name="timeout">Timeout for Info Query</param>
+        public static async Task<IQueryInfo<T>> Info<T>(IPAddress address, ushort port, ServerType type, TimeSpan? timeout = null) where T : class
+            => await Info<T>(new IPEndPoint(address, port), type, timeout);
 
         /// <summary>
         /// Get information about the server.
@@ -57,9 +50,9 @@ namespace CoreRCON
         /// <param name="type">Server type.</param>
         /// <param name="timeout">Server type.</param>
         /// <exception cref="TimeoutException"></exception>
-        public static Task<IQueryInfo> Info(IPEndPoint host, ServerType type, TimeSpan? timeout = null)
+        public static Task<IQueryInfo<T>> Info<T>(IPEndPoint host, ServerType type, TimeSpan? timeout = null) where T : class
         {
-            return Task.Run<IQueryInfo>(async () =>
+            return Task.Run(async () =>
             {
                 switch (type)
                 {
@@ -73,17 +66,37 @@ namespace CoreRCON
                             await _client.SendAsync(challenge, challenge.Length, host);
                             sourceResponse = await _client.ReceiveAsync();
                         }
-                        return SourceQueryInfo.FromBytes(sourceResponse.Buffer);
+                        
+                        return (IQueryInfo<T>)SourceQueryInfo.FromBytes(sourceResponse.Buffer);
                     case ServerType.Minecraft:
                         var padding = new byte[] { 0x00, 0x00, 0x00, 0x00 };
                         var datagram = _magic.Concat(new[] { (byte)PacketType.Stat }).Concat(_sessionid).Concat(await Challenge(host, ServerType.Minecraft)).Concat(padding).ToArray();
+
+                        // var result = await OptimizedChallenge(host, ServerType.Minecraft);
+                        
                         await _client.SendAsync(datagram, datagram.Length, host);
                         var mcResponce = await _client.ReceiveAsync();
-                        return MinecraftQueryInfo.FromBytes(mcResponce.Buffer);
+                        return (IQueryInfo<T>)MinecraftQueryInfo.FromBytes(mcResponce.Buffer);
                     default:
                         throw new ArgumentException("type argument was invalid");
                 }
             }).TimeoutAfter(timeout);
+        }
+
+        public static async Task<IMinecraftQueryInfo> MinecraftInfo(IPEndPoint host, ServerType type, TimeSpan? timeout = null)
+        {
+            var padding = new byte[] { 0x00, 0x00, 0x00, 0x00 };
+            var datagram = _magic.Concat(new[] { (byte)PacketType.Stat }).Concat(_sessionid).Concat(await Challenge(host, ServerType.Minecraft)).Concat(padding).ToArray();
+                        
+            await _client.SendAsync(datagram, datagram.Length, host);
+            var mcResponce = await _client.ReceiveAsync();
+            return MinecraftQueryInfo.FromBytes(mcResponce.Buffer);
+        }
+        
+        public static ISourceQueryInfo SourceInfo()
+        {
+            
+            return new SourceQueryInfo();
         }
 
         /// <summary>
@@ -91,7 +104,8 @@ namespace CoreRCON
         /// </summary>
         /// <param name="address">IP of the server.</param>
         /// <param name="port">Port to query gameserver.</param>
-        public static async Task<ServerQueryPlayer[]> Players(IPAddress address, ushort port) => await Players(new IPEndPoint(address, port));
+        public static async Task<ServerQueryPlayer[]> Players(IPAddress address, ushort port) => 
+            await Players(new IPEndPoint(address, port));
 
         /// <summary>
         /// Get information about each player currently on the server.
@@ -132,6 +146,56 @@ namespace CoreRCON
                     throw new ArgumentException("type argument was invalid");
             }
 
+        }
+
+        private static async Task<byte[]> OptimizedChallenge(IPEndPoint host, ServerType serverType)
+        {
+            switch (serverType)
+            {
+                case ServerType.Source:
+                    await _client.SendAsync(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0x55, 0xFF, 0xFF, 0xFF, 0xFF }, 9,
+                        host);
+                    return (await _client.ReceiveAsync()).Buffer.Skip(5).Take(4).ToArray();
+                
+                case ServerType.Minecraft:
+                    var handshake = BuildHandshake();
+                    await _client.SendAsync(handshake, handshake.Length, host);
+
+                    var aBuffer = (await _client.ReceiveAsync()).Buffer;
+                    var result = BuildMinecraftChallengeResponse(aBuffer);
+
+                    return result;
+
+                    static byte[] BuildHandshake()
+                    {
+                        return new byte[7]
+                        {
+                            _magic[0],
+                            _magic[1],
+                            (byte)PacketType.Handshake,
+                            _sessionid[0],
+                            _sessionid[1],
+                            _sessionid[2],
+                            _sessionid[3]
+                        };
+                    }
+                default:
+                    throw new ArgumentException("type argument was invalid");
+            }
+        }
+
+        private static byte[] BuildMinecraftChallengeResponse(Span<byte> buffer)
+        {
+            ReadOnlySpan<byte> challenge = buffer.Slice(5, buffer.Length);
+            Span<char> challengeChars = Span<char>.Empty;
+
+            Encoding.ASCII.GetChars(challenge, challengeChars);
+            var challengeInt = int.Parse(challengeChars);
+
+            var challengeBytes = BitConverter.GetBytes(challengeInt).AsSpan();
+            challengeBytes.Reverse();
+
+            return challengeBytes.ToArray();
         }
     }
 }

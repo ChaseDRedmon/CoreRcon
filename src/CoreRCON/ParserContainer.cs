@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace CoreRCON.Parsers
+namespace CoreRCON
 {
     /// <summary>
     /// Holds callbacks non-generically.

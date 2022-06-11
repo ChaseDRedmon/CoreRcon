@@ -1,8 +1,9 @@
 ﻿using System;
 using System.Linq;
 using System.Reflection;
+using CoreRCON.Parsers;
 
-namespace CoreRCON.Parsers
+namespace CoreRCON
 {
     internal static class ParserHelpers
     {

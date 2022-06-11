@@ -15,4 +15,13 @@
         // SERVERDATA_AUTH
         Auth = 3
     }
+    
+    /// <summary>
+    /// The different query implementations.
+    /// </summary>
+    public enum ServerType
+    {
+        Source,
+        Minecraft
+    }
 }

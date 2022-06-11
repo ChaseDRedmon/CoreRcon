@@ -1,12 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Text;
 
 namespace CoreRCON.PacketFormats
 {
-    public class MinecraftQueryInfo : IQueryInfo
+    public class MinecraftQueryInfo : IMinecraftQueryInfo
     {
         public string MessageOfTheDay { get; private set; }
         public string Gametype { get; private set; }
@@ -18,13 +15,13 @@ namespace CoreRCON.PacketFormats
         public string MaxPlayers { get; private set; }
         public string HostPort { get; private set; }
         public string HostIp { get; private set; }
-
         public IEnumerable<string> Players { get; private set; }
 
-        public static MinecraftQueryInfo FromBytes(byte[] buffer)
+        public static MinecraftQueryInfo FromBytes(ReadOnlySpan<byte> buffer)
         {
             int i = 16; // 1x type, 4x session, 11x padding
             var serverinfo = buffer.ReadNullTerminatedStringDictionary(i, ref i);
+            
             i += 10;
             var players = buffer.ReadNullTerminatedStringArray(i, ref i);
 
