@@ -14,10 +14,9 @@ namespace CoreRCON.PacketFormats
 
     internal static partial class HLRegexParser
     {
-        
-        [RegexGenerator(@"L (\d{2}/\d{2}/\d{4} - \d{2}:\d{2}:\d{2}):", RegexOptions.Compiled, 1000)]
+        [GeneratedRegex(@"L (\d{2}/\d{2}/\d{4} - \d{2}:\d{2}:\d{2}):", RegexOptions.Compiled, 1000)]
         private static partial Regex HLLogStandard();
-
+        
         /// <summary>
         /// Gets timestamp
         /// </summary>

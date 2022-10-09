@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using CoreRCON.PacketFormats;
+using OneOf;
 
 namespace CoreRCON
 {
@@ -148,52 +149,6 @@ namespace CoreRCON
                 default:
                     throw new ArgumentException("type argument was invalid");
             }
-
-        }
-
-        private static async Task<byte[]> OptimizedChallenge(IPEndPoint host, ServerType serverType)
-        {
-            switch (serverType)
-            {
-                case ServerType.Source:
-                    await _client.SendAsync(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0x55, 0xFF, 0xFF, 0xFF, 0xFF }, 9,
-                        host);
-                    return (await _client.ReceiveAsync()).Buffer.Skip(5).Take(4).ToArray();
-                
-                case ServerType.Minecraft:
-                    var handshake = BuildHandshake();
-                    await _client.SendAsync(handshake, handshake.Length, host);
-                    
-                    var aBuffer = (await _client.ReceiveAsync()).Buffer;
-                    var result = BuildMinecraftChallengeResponse(aBuffer);
-                    return result;
-
-                    static byte[] BuildHandshake()
-                    {
-                        return new[]
-                        {
-                            _magic[0],
-                            _magic[1],
-                            (byte)PacketType.Handshake,
-                            _sessionid[0],
-                            _sessionid[1],
-                            _sessionid[2],
-                            _sessionid[3]
-                        };
-                    }
-                default:
-                    throw new ArgumentException("type argument was invalid");
-            }
-        }
-
-        private static byte[] BuildMinecraftChallengeResponse(Span<byte> buffer)
-        {
-            ReadOnlySpan<byte> challenge = buffer.Slice(5, buffer.Length);
-            _ = Utf8Parser.TryParse(challenge, out int challengeInt, out _);
-            var reversedChallengeInt = BitConverter.GetBytes(challengeInt).AsSpan();
-            reversedChallengeInt.Reverse();
-            
-            return reversedChallengeInt.ToArray();
         }
     }
 }

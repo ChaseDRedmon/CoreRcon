@@ -3,19 +3,19 @@ using System.Collections.Generic;
 
 namespace CoreRCON.PacketFormats
 {
-    public class MinecraftQueryInfo : IMinecraftQueryInfo
+    public record MinecraftQueryInfo : IMinecraftQueryInfo
     {
-        public string MessageOfTheDay { get; private set; }
-        public string Gametype { get; private set; }
-        public string GameId { get; private set; }
-        public string Version { get; private set; }
-        public string Plugins { get; private set; }
-        public string Map { get; private set; }
-        public string NumPlayers { get; private set; }
-        public string MaxPlayers { get; private set; }
-        public string HostPort { get; private set; }
-        public string HostIp { get; private set; }
-        public IEnumerable<string> Players { get; private set; }
+        public string MessageOfTheDay { get; private init; }
+        public string Gametype { get; private init; }
+        public string GameId { get; private init; }
+        public string Version { get; private init; }
+        public string Plugins { get; private init; }
+        public string Map { get; private init; }
+        public string NumPlayers { get; private init; }
+        public string MaxPlayers { get; private init; }
+        public string HostPort { get; private init; }
+        public string HostIp { get; private init; }
+        public IEnumerable<string> Players { get; private init; }
 
         public static MinecraftQueryInfo FromBytes(ReadOnlySpan<byte> buffer)
         {
